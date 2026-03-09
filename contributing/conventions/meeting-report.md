@@ -18,10 +18,10 @@ Substitute actual week and meeting numbers for N and M.
 - **Unclear content**: If something in the transcript is inaudible or the meaning is ambiguous, flag it with [unclear] rather than guessing.
 - **Do not infer decisions**: Only record decisions that were explicitly stated or clearly agreed upon. Do not infer consensus from silence. Proposals, hypotheticals, and "what if" suggestions that were not concluded belong in Open Questions, not Decisions.
 - **Superseded decisions**: If a later discussion in the same meeting overrides an earlier agreement, only include the final version in Decisions. Note the evolution briefly (e.g., "Initially agreed on X, later revised to Y because...").
-- **Cross-references**: When a decision leads to an action point, or an open question relates to a decision, reference it (e.g., "See Decision #5"). This applies across all sections.
-- **Items as subsections**: Write each distinct item within a section — numbered decisions, open questions, action points, status update items, glossary terms, Q&A pairs, and discussions — as a Markdown subsection with a heading rather than a bullet list entry or blockquote. Write the content beneath the heading as prose paragraphs. This makes each item individually linkable via a Markdown anchor. Never use bold text to label items within a section.
+- **Cross-references**: When a decision leads to an action point, or an open question relates to a decision, reference it using an anchor link (see [Anchor links](#anchor-links)). This applies across all sections.
+- **Items as subsections**: Write each distinct item within a section — numbered decisions, open questions, action points, status update items, glossary terms, Q&A pairs, and discussions — as a Markdown subsection with a heading rather than a bullet list entry or blockquote. Write the content beneath the heading as prose paragraphs. This makes each item individually linkable via a Markdown anchor. Never use bold text to label items within a section. Each heading must use the format `### S.N. Label N: Title` — where `S.N.` is the two-level section number (e.g., `5.2.`), `Label` is the section label (`Decision`, `Open question`, `Action point`, `Date or deadline`, `Question and answer`, or `Discussion`), and `N` is the item number within that section (omitted for `Date or deadline`, `Question and answer`, and `Discussion`).
 - **Clean headings**: Headings must contain only the item title — no dates, consensus levels, priorities, severity tags, speaker labels, timestamps, or any other metadata. Metadata in headings breaks automatic table-of-contents generation and anchor links. Place all contextual metadata — speaker attribution, timestamp ranges, owners, priority, consensus level, and similar details — at the beginning of the first paragraph beneath the heading, highlighted with **bold**. Never append metadata to the heading or place it on a separate line before the paragraph.
-- **Anchor links**: When cross-referencing a specific item in the report, link to its subsection anchor rather than using plain text (e.g., `[Decision #1: Use PostgreSQL](#1-use-postgresql-for-the-primary-data-store)` instead of "See Decision #1").
+- **Anchor links**: When cross-referencing a specific item in the report, link to its subsection anchor rather than using plain text (e.g., `[Decision 1](#51-decision-1-use-postgresql-for-the-primary-data-store)` instead of "See Decision 1"). The anchor is derived from the full heading by lowercasing, removing punctuation, and replacing spaces with hyphens — so `### 5.1. Decision 1: Use PostgreSQL` becomes `#51-decision-1-use-postgresql`.
 - **Timestamps**: If the transcript includes timestamps, reference them at key moments so readers can locate the corresponding point in a recording. Always wrap timestamps in square brackets — single points as `[14:32]` and ranges as `[01:10:15–01:12:08]`. Square brackets are reserved for transcript-navigation timestamps only. Deadlines, scheduled dates, and other future times mentioned by speakers should be written as plain text (e.g., "by March 15", "next Monday at 10:00").
 - **Direct quotes vs paraphrasing**: Use direct quotes when the speaker's exact wording carries meaning — strong opinions, definitions, commitments, or memorable phrasing. Paraphrase for routine discussion.
 - **Depth calibration**: Scale the report's depth proportionally to the meeting's length and substance. A 15-minute standup should not produce the same volume as a 2-hour planning session.
@@ -59,15 +59,15 @@ A structured block at the top of the report:
 
 ### Action points
 
-Concrete next steps with owners (by speaker label) and deadlines (if mentioned). Write each action point as a subsection heading followed by a prose paragraph that states the owner, priority (**[blocking]**, **[high]**, **[medium]**, or **[low]**), scheduling details, and any relevant context. If a task was mentioned but no owner was assigned, say so in the prose. Do not place owner or priority on a separate bold-label line before the paragraph. Every action point originates from a decision, discussion, or open question — cross-reference the source item using an anchor link (e.g., "Stems from [Decision #2: Use PostgreSQL](#1-use-postgresql-for-the-primary-data-store)"). If a single decision spawns multiple action points, each one should link back independently.
+Concrete next steps with owners (by speaker label) and deadlines (if mentioned). Write each action point as a subsection heading in the format `### S.N. Action point N: Title` followed by a prose paragraph that states the owner, priority (**[blocking]**, **[high]**, **[medium]**, or **[low]**), scheduling details, and any relevant context. If a task was mentioned but no owner was assigned, say so in the prose. Do not place owner or priority on a separate bold-label line before the paragraph. Every action point originates from a decision, discussion, or open question — cross-reference the source item using an anchor link (e.g., "Stems from [Decision 2](#52-decision-2-use-postgresql-for-the-primary-data-store)"). If a single decision spawns multiple action points, each one should link back independently.
 
 ### Key dates and deadlines
 
-Dates, deadlines, and milestones mentioned during the meeting, even in passing. Write each distinct date as a subsection heading followed by a prose paragraph describing what the date refers to, who mentioned it, and any relevant context. Do not use a bullet list with bold labels.
+Dates, deadlines, and milestones mentioned during the meeting, even in passing. Write each distinct date as a subsection heading in the format `### S.N. Date or deadline: Title` followed by a prose paragraph describing what the date refers to, who mentioned it, and any relevant context. Do not use a bullet list with bold labels.
 
 ### Decisions
 
-**This is the largest section.** Number each decision. Every conclusion, agreement, or direction discussed should be its own numbered item — even small ones. Group decisions by topic, not by chronological order. For each decision, include:
+**This is the largest section.** Number each decision. Every conclusion, agreement, or direction discussed should be its own numbered item — even small ones. Write each decision as a subsection heading in the format `### S.N. Decision N: Title`. Group decisions by topic, not by chronological order. For each decision, include:
 
 - What was decided
 - **Consensus level**: State **unanimous**, **majority**, or **contentious** (note dissenters by speaker label) at the start of the paragraph body, not in the heading
@@ -82,14 +82,14 @@ Be exhaustive — capture every distinct decision, no matter how small. Cover al
 
 #### Example format
 
-### 1. Use PostgreSQL for the primary data store
+### 5.1. Decision 1: Use PostgreSQL for the primary data store
 
 **Consensus: unanimous.**
-Speaker A proposed PostgreSQL, citing its JSON support for flexible schemas. Speaker B initially suggested MongoDB but agreed after Speaker A demonstrated that PostgreSQL's JSONB columns would cover the same use case without adding a second database. Speaker C noted: "We already have operational expertise with Postgres, so this keeps the ops burden low." *(See Action Point #3)*
+Speaker A proposed PostgreSQL, citing its JSON support for flexible schemas. Speaker B initially suggested MongoDB but agreed after Speaker A demonstrated that PostgreSQL's JSONB columns would cover the same use case without adding a second database. Speaker C noted: "We already have operational expertise with Postgres, so this keeps the ops burden low." *(See [Action point 3](#73-action-point-3-deploy-database-migrations))*
 
 ### Open questions
 
-Things that were raised but not resolved — including proposals, hypotheticals, and "what if" suggestions that did not reach a conclusion. Include context on why they remain open, any preliminary opinions expressed, and any disagreements that prevented resolution. Cross-reference related decisions where applicable.
+Things that were raised but not resolved — including proposals, hypotheticals, and "what if" suggestions that did not reach a conclusion. Write each open question as a subsection heading in the format `### S.N. Open question N: Title`. Include context on why they remain open, any preliminary opinions expressed, and any disagreements that prevented resolution. Cross-reference related decisions where applicable.
 
 ### Status updates
 
@@ -97,16 +97,16 @@ What is already done, built, deployed, or available before this meeting. Include
 
 ### Questions and answers
 
-Questions that came up during the meeting and were answered on the spot. Write each Q&A pair as a subsection heading (e.g., `### Q: What mechanism can we use to...`) followed by prose paragraphs. The heading contains only the question — do not use bold `**Q:**` labels, and do not append speaker attribution or timestamps to the heading. State who asked, who answered, and the relevant timestamp range in the opening sentence of the paragraph instead. Include:
+Questions that came up during the meeting and were answered on the spot. Write each Q&A pair as a subsection heading in the format `### S.N. Question and answer: Question text` (e.g., `### 10.1. Question and answer: What mechanism can we use to...`) followed by prose paragraphs. The heading contains only the label and the question — do not use bold `**Q:**` labels, and do not append speaker attribution or timestamps to the heading. State who asked, who answered, and the relevant timestamp range in the opening sentence of the paragraph instead. Include:
 
 - Which speaker asked and which speaker answered
 - The full answer with examples and analogies
 
-When a speaker presents slides, gives a demo, or shares a screen for an extended monologue, write it as a `### Demo:` or `### Presentation:` subsection: summarize the content presented, then capture the discussion that followed in full detail.
+When a speaker presents slides, gives a demo, or shares a screen for an extended monologue, write it as a `### S.N. Demo: Title` or `### S.N. Presentation: Title` subsection: summarize the content presented, then capture the discussion that followed in full detail.
 
 ### Discussions
 
-Extended conversations, off-topic digressions (tools, mentoring experiences, industry news), and other substantive exchanges that are not direct Q&A pairs. Write each distinct discussion as a subsection heading (e.g., `### Discussion: Deployment strategy trade-offs`) followed by prose paragraphs. The heading contains only the topic — do not use bold `**Discussion:**` labels, and do not append speaker attribution or timestamps to the heading. State who participated and the relevant timestamp range in the opening sentence of the paragraph instead.
+Extended conversations, off-topic digressions (tools, mentoring experiences, industry news), and other substantive exchanges that are not direct Q&A pairs. Write each distinct discussion as a subsection heading in the format `### S.N. Discussion: Topic` (e.g., `### 11.1. Discussion: Deployment strategy trade-offs`) followed by prose paragraphs. The heading contains only the label and the topic — do not use bold `**Discussion:**` labels, and do not append speaker attribution or timestamps to the heading. State who participated and the relevant timestamp range in the opening sentence of the paragraph instead.
 
 ### Glossary
 
