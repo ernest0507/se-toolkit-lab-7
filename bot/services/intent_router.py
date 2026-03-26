@@ -1,149 +1,138 @@
-"""LLM-based intent routing system for handling natural language queries."""
+"""Natural language router powered by LLM tool-calling."""
 
 import json
 import sys
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable
 
 from .llm_api import get_llm_client, LLMError, TOOLS, SYSTEM_PROMPT
 from .lms_api import get_api_client, APIError
 
 
-class Router:
-    """Intent router that delegates user queries to appropriate tools via LLM."""
+class LLMRouter:
+    """Handles user queries by delegating decisions to an LLM."""
 
-    MAX_STEPS = 5
+    MAX_ITER = 5
 
     def __init__(self) -> None:
-        self._llm = get_llm_client()
-        self._api = get_api_client()
+        self.llm = get_llm_client()
+        self.api = get_api_client()
 
-        self._tools: dict[str, Callable[..., Awaitable[Any]]] = {
-            "get_items": self._items,
-            "get_learners": self._learners,
-            "get_scores": self._scores,
-            "get_pass_rates": self._pass_rates,
-            "get_timeline": self._timeline,
-            "get_groups": self._groups,
-            "get_top_learners": self._top_learners,
-            "get_completion_rate": self._completion,
-            "trigger_sync": self._sync,
+        # Mapping tool names → functions
+        self.handlers: dict[str, Callable[..., Awaitable[Any]]] = {
+            "get_items": self.fetch_items,
+            "get_learners": self.fetch_learners,
+            "get_scores": self.fetch_scores,
+            "get_pass_rates": self.fetch_pass_rates,
+            "get_timeline": self.fetch_timeline,
+            "get_groups": self.fetch_groups,
+            "get_top_learners": self.fetch_top,
+            "get_completion_rate": self.fetch_completion,
+            "trigger_sync": self.trigger_sync,
         }
 
-    # ------------------------------------------------------------------
-    # Logging
-    # ------------------------------------------------------------------
+    # ---------------- Logging ----------------
 
-    async def _log(self, text: str) -> None:
-        print(f"[router] {text}", file=sys.stderr)
+    async def _dbg(self, msg: str) -> None:
+        print(f"[router] {msg}", file=sys.stderr)
 
-    # ------------------------------------------------------------------
-    # Tool execution
-    # ------------------------------------------------------------------
+    # ---------------- Tool executor ----------------
 
-    async def _run_tool(self, name: str, args: dict[str, Any]) -> Any:
-        if name not in self._tools:
-            raise ValueError(f"Unknown tool: {name}")
+    async def execute(self, tool: str, params: dict[str, Any]) -> Any:
+        if tool not in self.handlers:
+            raise RuntimeError(f"Tool not found: {tool}")
 
         try:
-            result = await self._tools[name](**args)
-            await self._log(f"{name} -> {len(str(result))} chars")
+            result = await self.handlers[tool](**params)
+            await self._dbg(f"{tool} done ({len(str(result))} chars)")
             return result
         except APIError as e:
-            await self._log(f"{name} API error: {e.message}")
+            await self._dbg(f"{tool} API failed: {e.message}")
             return {"error": e.message}
         except Exception as e:
-            await self._log(f"{name} exception: {e}")
+            await self._dbg(f"{tool} crashed: {e}")
             return {"error": str(e)}
 
-    # ------------------------------------------------------------------
-    # Tool wrappers (API layer)
-    # ------------------------------------------------------------------
+    # ---------------- Tool wrappers ----------------
 
-    async def _items(self) -> list[dict]:
-        data = await self._api.get_items()
+    async def fetch_items(self) -> list[dict]:
+        items = await self.api.get_items()
         return [
-            {"id": i.id, "type": i.type, "title": i.title, "lab": i.lab}
-            for i in data
+            {"id": x.id, "type": x.type, "title": x.title, "lab": x.lab}
+            for x in items
         ]
 
-    async def _learners(self) -> list[dict]:
+    async def fetch_learners(self) -> list[dict]:
         return []
 
-    async def _scores(self, lab: str) -> list[dict]:
-        return [{"lab": lab, "note": "scores endpoint not yet implemented"}]
+    async def fetch_scores(self, lab: str) -> list[dict]:
+        return [{"lab": lab, "note": "not implemented"}]
 
-    async def _pass_rates(self, lab: str) -> list[dict]:
-        data = await self._api.get_pass_rates(lab)
+    async def fetch_pass_rates(self, lab: str) -> list[dict]:
+        stats = await self.api.get_pass_rates(lab)
         return [
-            {"task": x.task, "pass_rate": x.pass_rate, "attempts": x.attempts}
-            for x in data
+            {"task": s.task, "pass_rate": s.pass_rate, "attempts": s.attempts}
+            for s in stats
         ]
 
-    async def _timeline(self, lab: str) -> list[dict]:
-        return [{"lab": lab, "note": "timeline endpoint not yet implemented"}]
+    async def fetch_timeline(self, lab: str) -> list[dict]:
+        return [{"lab": lab, "note": "not implemented"}]
 
-    async def _groups(self, lab: str) -> list[dict]:
-        return [{"lab": lab, "note": "groups endpoint not yet implemented"}]
+    async def fetch_groups(self, lab: str) -> list[dict]:
+        return [{"lab": lab, "note": "not implemented"}]
 
-    async def _top_learners(self, lab: str, limit: int = 5) -> list[dict]:
+    async def fetch_top(self, lab: str, limit: int = 5) -> list[dict]:
         return [{"lab": lab, "limit": limit, "note": "not implemented"}]
 
-    async def _completion(self, lab: str) -> dict:
+    async def fetch_completion(self, lab: str) -> dict:
         return {"lab": lab, "note": "not implemented"}
 
-    async def _sync(self) -> dict:
-        return {"note": "sync not implemented"}
+    async def trigger_sync(self) -> dict:
+        return {"note": "not implemented"}
 
-    # ------------------------------------------------------------------
-    # Core routing loop
-    # ------------------------------------------------------------------
+    # ---------------- Core logic ----------------
 
-    async def route(self, user_input: str) -> str:
-        await self._log(f"Incoming: {user_input[:50]}")
+    async def route(self, query: str) -> str:
+        await self._dbg(f"Query: {query[:50]}")
 
-        history = [
+        convo = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_input},
+            {"role": "user", "content": query},
         ]
 
-        for step in range(1, self.MAX_STEPS + 1):
+        for i in range(self.MAX_ITER):
             try:
-                await self._log(f"LLM call #{step}")
-                reply = await self._llm.chat(history, tools=TOOLS)
+                await self._dbg(f"Step {i+1}")
+                out = await self.llm.chat(convo, tools=TOOLS)
 
-                calls = reply.get("tool_calls", [])
+                tool_calls = out.get("tool_calls") or []
 
-                # No tools → final answer
-                if not calls:
-                    answer = reply.get("content") or "No information available."
-                    await self._log("Final answer produced")
-                    return answer
+                # If no tools requested → final answer
+                if not tool_calls:
+                    return out.get("content") or "No answer available."
 
-                await self._log(f"{len(calls)} tool call(s) detected")
-
-                history.append(
+                convo.append(
                     {
                         "role": "assistant",
-                        "content": reply.get("content"),
-                        "tool_calls": calls,
+                        "content": out.get("content"),
+                        "tool_calls": tool_calls,
                     }
                 )
 
-                for call in calls:
+                for call in tool_calls:
                     fn = call.get("function", {})
                     name = fn.get("name", "")
-                    raw_args = fn.get("arguments", "{}")
+                    raw = fn.get("arguments", "{}")
 
                     try:
-                        args = json.loads(raw_args) if raw_args else {}
-                    except json.JSONDecodeError:
+                        args = json.loads(raw)
+                    except Exception:
                         args = {}
 
-                    await self._log(f"Running {name} with {args}")
+                    await self._dbg(f"Exec {name} with {args}")
 
-                    result = await self._run_tool(name, args)
+                    result = await self.execute(name, args)
 
-                    history.append(
+                    convo.append(
                         {
                             "role": "tool",
                             "tool_call_id": call.get("id", ""),
@@ -153,24 +142,22 @@ class Router:
                         }
                     )
 
-                await self._log("Returning tool outputs to LLM")
-
             except LLMError as e:
-                await self._log(f"LLM error: {e}")
+                await self._dbg(f"LLM fail: {e}")
                 return f"LLM error: {e}"
             except Exception as e:
-                await self._log(f"Unexpected failure: {e}")
+                await self._dbg(f"Unexpected: {e}")
                 return f"Error: {e}"
 
-        return "Request processing failed. Try rephrasing."
+        return "Unable to process request. Try again."
 
 
-# Singleton pattern
-_instance: Router | None = None
+# Lazy singleton
+_router_instance: LLMRouter | None = None
 
 
-def get_router() -> Router:
-    global _instance
-    if _instance is None:
-        _instance = Router()
-    return _instance
+def get_router() -> LLMRouter:
+    global _router_instance
+    if _router_instance is None:
+        _router_instance = LLMRouter()
+    return _router_instance
