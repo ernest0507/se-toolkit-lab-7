@@ -2,54 +2,36 @@
 
 ## Overview
 
-This document outlines the development plan for the LMS Telegram Bot, which provides students with access to their lab progress, scores, and course information through Telegram. The bot communicates with the LMS backend API and uses an LLM for natural language intent routing.
+This document describes the development plan for a Telegram bot designed for LMS. The bot allows students to access information about their lab progress, scores, and course details directly via Telegram. It communicates with the LMS backend API and leverages an LLM for interpreting natural language queries and routing intents.
 
 ## Architecture
 
-The bot follows a **layered architecture** with clear separation of concerns:
+The project is organized using a **layered architecture**, ensuring a clear separation of responsibilities:
 
-1. **Entry Point** (`bot.py`): Handles Telegram bot lifecycle and `--test` mode for offline testing
-2. **Handlers** (`handlers/`): Pure functions that process commands and return text responses — no Telegram dependency
-3. **Services** (`services/`): API clients for external services (LMS API, LLM API)
-4. **Configuration** (`config.py`): Environment variable loading with pydantic-settings
+1. **Entry Point** (`bot.py`): Manages application startup and provides a `--test` mode for offline interaction
+2. **Handlers** (`handlers/`): Pure logic functions that process requests and return text responses, independent of Telegram
+3. **Services** (`services/`): Responsible for communication with external systems (LMS API, LLM API)
+4. **Configuration** (`config.py`): Handles environment variables using pydantic-settings
 
-This **testable handler architecture** (P0.1) allows the same handler logic to work from `--test` mode, unit tests, or Telegram — the transport layer is separate from the business logic.
+This handler-based approach (**P0.1**) ensures that the same logic can be reused across different environments: test mode, unit tests, and Telegram integration — keeping transport separate from business logic.
 
 ## Task Breakdown
 
 ### Task 1: Scaffold (Current)
 
-Create the project skeleton with `--test` mode. Handlers return placeholder text. The key deliverable is a working test mode where `uv run bot.py --test "/start"` prints a response without needing Telegram credentials.
+Set up the initial project structure with support for `--test` mode.  
+At this stage, handlers return placeholder responses.  
+The main goal is to ensure that running:
+
+produces a valid output without requiring Telegram credentials.
 
 ### Task 2: Backend Integration
 
-Implement real API calls to the LMS backend:
-- `/health` — Check backend connectivity via `/api/ping`
-- `/labs` — Fetch available labs from `/api/items`
-- `/scores` — Fetch student scores from the backend
+Integrate the bot with the LMS backend API:
 
-Create an API client service with Bearer token authentication. Handle errors gracefully (network failures, 401/403, timeouts).
+- `/health` — verify connectivity via `/api/ping`
+- `/labs` — retrieve available labs from `/api/items`
+- `/scores` — obtain user scores from the backend
 
-### Task 3: Intent Routing with LLM
-
-Add natural language understanding. Instead of requiring exact commands like `/labs`, users can ask "what labs are available?" The bot uses an LLM to route intents to handlers via tool descriptions. Key insight: **description quality matters more than prompt engineering** — clear tool descriptions enable the LLM to make correct routing decisions.
-
-### Task 4: Deployment
-
-Deploy the bot on the VM with proper process management (nohup or systemd). Ensure the bot survives SSH disconnects and restarts. Configure environment variables securely via `.env.bot.secret`.
-
-## Testing Strategy
-
-- **Test mode**: `--test` flag for quick iteration without Telegram
-- **Unit tests**: Test handlers in isolation (future)
-- **Manual testing**: Deploy to VM and test in real Telegram
-
-## Environment Variables
-
-| Variable | Description | Source |
-|----------|-------------|--------|
-| `BOT_TOKEN` | Telegram bot token | BotFather |
-| `LMS_API_BASE_URL` | Backend API URL | Docker config |
-| `LMS_API_KEY` | Backend API key | `.env.docker.secret` |
-| `LLM_API_KEY` | LLM API key | Qwen Code / OpenRouter |
-| `LLM_API_BASE_URL` | LLM API endpoint | Qwen Code / OpenRouter |
+Implement an API client using Bearer token authentication.  
+Ensure proper error handling for network issues, authentication failures (401/403), and timeouts.
