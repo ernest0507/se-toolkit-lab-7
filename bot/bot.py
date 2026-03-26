@@ -1,4 +1,4 @@
-"""Entry point for Telegram bot with optional test mode."""
+"""Telegram bot launcher with support for test mode."""
 
 import argparse
 import asyncio
@@ -7,39 +7,38 @@ import sys
 from handlers.commands import handle_message
 
 
-def get_arguments() -> argparse.Namespace:
-    """Configure and retrieve CLI arguments."""
-    arg_parser = argparse.ArgumentParser(description="LMS Telegram Bot")
-
-    arg_parser.add_argument(
+def build_parser() -> argparse.ArgumentParser:
+    """Create argument parser."""
+    parser = argparse.ArgumentParser(description="LMS Telegram Bot")
+    parser.add_argument(
         "--test",
-        dest="test_message",
         type=str,
-        metavar="MESSAGE",
-        help="Run in test mode with provided message (e.g., '/start')",
+        help="Pass a message to run in test mode (e.g. '/start')"
     )
-
-    return arg_parser.parse_args()
-
-
-async def process_test(message: str) -> None:
-    """Process a single message in test mode."""
-    result = await handle_message(message)
-    print(result)
+    return parser
 
 
-async def run() -> None:
-    """Program entry logic."""
-    options = get_arguments()
+async def main() -> None:
+    """Main execution function."""
+    parser = build_parser()
+    args = parser.parse_args()
 
-    if options.test_message is not None:
-        await process_test(options.test_message)
-        sys.exit()
+    # If test mode is enabled
+    if args.test:
+        reply = await handle_message(args.test)
+        print(reply)
+        return
 
-    # Placeholder for future Telegram bot launch
-    print("Telegram mode is not implemented yet. Use --test.")
-    sys.exit()
+    # Default mode (not implemented yet)
+    print("Telegram mode not implemented. Use --test argument.")
+    return
+
+
+def entrypoint() -> None:
+    """Synchronous entrypoint wrapper."""
+    asyncio.run(main())
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    entrypoint()
