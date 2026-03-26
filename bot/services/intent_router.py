@@ -1,216 +1,176 @@
-"""Intent router for natural language queries using LLM tool calling."""
+"""LLM-based intent routing system for handling natural language queries."""
 
 import json
 import sys
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 from .llm_api import get_llm_client, LLMError, TOOLS, SYSTEM_PROMPT
 from .lms_api import get_api_client, APIError
 
 
-class IntentRouter:
-    """Routes natural language queries to backend tools via LLM."""
+class Router:
+    """Intent router that delegates user queries to appropriate tools via LLM."""
 
-    def __init__(self):
-        self.llm_client = get_llm_client()
-        self.api_client = get_api_client()
-        # Map tool names to actual functions
-        self.tool_map = {
-            "get_items": self._get_items,
-            "get_learners": self._get_learners,
-            "get_scores": self._get_scores,
-            "get_pass_rates": self._get_pass_rates,
-            "get_timeline": self._get_timeline,
-            "get_groups": self._get_groups,
-            "get_top_learners": self._get_top_learners,
-            "get_completion_rate": self._get_completion_rate,
-            "trigger_sync": self._trigger_sync,
+    MAX_STEPS = 5
+
+    def __init__(self) -> None:
+        self._llm = get_llm_client()
+        self._api = get_api_client()
+
+        self._tools: dict[str, Callable[..., Awaitable[Any]]] = {
+            "get_items": self._items,
+            "get_learners": self._learners,
+            "get_scores": self._scores,
+            "get_pass_rates": self._pass_rates,
+            "get_timeline": self._timeline,
+            "get_groups": self._groups,
+            "get_top_learners": self._top_learners,
+            "get_completion_rate": self._completion,
+            "trigger_sync": self._sync,
         }
 
-    async def _debug(self, message: str) -> None:
-        """Print debug message to stderr."""
-        print(f"[router] {message}", file=sys.stderr)
+    # ------------------------------------------------------------------
+    # Logging
+    # ------------------------------------------------------------------
 
-    async def _execute_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        """Execute a tool and return the result."""
-        if name not in self.tool_map:
+    async def _log(self, text: str) -> None:
+        print(f"[router] {text}", file=sys.stderr)
+
+    # ------------------------------------------------------------------
+    # Tool execution
+    # ------------------------------------------------------------------
+
+    async def _run_tool(self, name: str, args: dict[str, Any]) -> Any:
+        if name not in self._tools:
             raise ValueError(f"Unknown tool: {name}")
 
-        func = self.tool_map[name]
         try:
-            result = await func(**arguments)
-            await self._debug(f"Tool {name}({arguments}) -> {len(str(result))} chars")
+            result = await self._tools[name](**args)
+            await self._log(f"{name} -> {len(str(result))} chars")
             return result
         except APIError as e:
-            await self._debug(f"Tool {name} error: {e.message}")
+            await self._log(f"{name} API error: {e.message}")
             return {"error": e.message}
         except Exception as e:
-            await self._debug(f"Tool {name} exception: {e}")
+            await self._log(f"{name} exception: {e}")
             return {"error": str(e)}
 
-    # -----------------------------------------------------------------------
-    # Tool implementations - wrap LMS API calls
-    # -----------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Tool wrappers (API layer)
+    # ------------------------------------------------------------------
 
-    async def _get_items(self) -> list[dict]:
-        """Get all items (labs and tasks)."""
-        items = await self.api_client.get_items()
+    async def _items(self) -> list[dict]:
+        data = await self._api.get_items()
         return [
-            {"id": i.id, "type": i.type, "title": i.title, "lab": i.lab} for i in items
+            {"id": i.id, "type": i.type, "title": i.title, "lab": i.lab}
+            for i in data
         ]
 
-    async def _get_learners(self) -> list[dict]:
-        """Get all learners."""
-        # Note: This endpoint may not exist yet - return empty list
+    async def _learners(self) -> list[dict]:
         return []
 
-    async def _get_scores(self, lab: str) -> list[dict]:
-        """Get score distribution for a lab."""
-        # Note: This endpoint may need to be added to LMS API
+    async def _scores(self, lab: str) -> list[dict]:
         return [{"lab": lab, "note": "scores endpoint not yet implemented"}]
 
-    async def _get_pass_rates(self, lab: str) -> list[dict]:
-        """Get pass rates for a lab."""
-        pass_rates = await self.api_client.get_pass_rates(lab)
+    async def _pass_rates(self, lab: str) -> list[dict]:
+        data = await self._api.get_pass_rates(lab)
         return [
-            {"task": pr.task, "pass_rate": pr.pass_rate, "attempts": pr.attempts}
-            for pr in pass_rates
+            {"task": x.task, "pass_rate": x.pass_rate, "attempts": x.attempts}
+            for x in data
         ]
 
-    async def _get_timeline(self, lab: str) -> list[dict]:
-        """Get timeline for a lab."""
-        # Note: This endpoint may need to be added to LMS API
+    async def _timeline(self, lab: str) -> list[dict]:
         return [{"lab": lab, "note": "timeline endpoint not yet implemented"}]
 
-    async def _get_groups(self, lab: str) -> list[dict]:
-        """Get group data for a lab."""
-        # Note: This endpoint may need to be added to LMS API
+    async def _groups(self, lab: str) -> list[dict]:
         return [{"lab": lab, "note": "groups endpoint not yet implemented"}]
 
-    async def _get_top_learners(self, lab: str, limit: int = 5) -> list[dict]:
-        """Get top learners for a lab."""
-        # Note: This endpoint may need to be added to LMS API
-        return [
-            {
-                "lab": lab,
-                "limit": limit,
-                "note": "top_learners endpoint not yet implemented",
-            }
-        ]
+    async def _top_learners(self, lab: str, limit: int = 5) -> list[dict]:
+        return [{"lab": lab, "limit": limit, "note": "not implemented"}]
 
-    async def _get_completion_rate(self, lab: str) -> dict:
-        """Get completion rate for a lab."""
-        # Note: This endpoint may need to be added to LMS API
-        return {"lab": lab, "note": "completion_rate endpoint not yet implemented"}
+    async def _completion(self, lab: str) -> dict:
+        return {"lab": lab, "note": "not implemented"}
 
-    async def _trigger_sync(self) -> dict:
-        """Trigger a data sync."""
-        # Note: This endpoint may need to be added to LMS API
-        return {"note": "sync endpoint not yet implemented"}
+    async def _sync(self) -> dict:
+        return {"note": "sync not implemented"}
 
-    # -----------------------------------------------------------------------
-    # Main routing logic
-    # -----------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Core routing loop
+    # ------------------------------------------------------------------
 
-    async def route(self, message: str) -> str:
-        """Route a natural language message to tools and return a response.
+    async def route(self, user_input: str) -> str:
+        await self._log(f"Incoming: {user_input[:50]}")
 
-        Args:
-            message: The user's natural language query.
-
-        Returns:
-            A text response to send back to the user.
-        """
-        await self._debug(f"Routing message: {message[:50]}...")
-
-        # Build conversation history
-        messages = [
+        history = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": message},
+            {"role": "user", "content": user_input},
         ]
 
-        max_iterations = 5  # Prevent infinite loops
-        iteration = 0
-
-        while iteration < max_iterations:
-            iteration += 1
-
+        for step in range(1, self.MAX_STEPS + 1):
             try:
-                # Call LLM
-                await self._debug(f"Calling LLM (iteration {iteration})...")
-                response = await self.llm_client.chat(messages, tools=TOOLS)
+                await self._log(f"LLM call #{step}")
+                reply = await self._llm.chat(history, tools=TOOLS)
 
-                # Check if LLM wants to call tools
-                tool_calls = response.get("tool_calls", [])
+                calls = reply.get("tool_calls", [])
 
-                if not tool_calls:
-                    # LLM provided a final answer
-                    content = response.get(
-                        "content", "I don't have information about that."
-                    )
-                    await self._debug(f"LLM returned final answer: {content[:100]}...")
-                    return content
+                # No tools → final answer
+                if not calls:
+                    answer = reply.get("content") or "No information available."
+                    await self._log("Final answer produced")
+                    return answer
 
-                # Execute tool calls
-                await self._debug(f"LLM called {len(tool_calls)} tool(s)")
+                await self._log(f"{len(calls)} tool call(s) detected")
 
-                # Add assistant's message with tool calls to history
-                messages.append(
+                history.append(
                     {
                         "role": "assistant",
-                        "content": response.get("content"),
-                        "tool_calls": tool_calls,
+                        "content": reply.get("content"),
+                        "tool_calls": calls,
                     }
                 )
 
-                # Execute each tool call and collect results
-                for tool_call in tool_calls:
-                    function = tool_call.get("function", {})
-                    name = function.get("name", "")
-                    arguments_str = function.get("arguments", "{}")
+                for call in calls:
+                    fn = call.get("function", {})
+                    name = fn.get("name", "")
+                    raw_args = fn.get("arguments", "{}")
 
                     try:
-                        arguments = json.loads(arguments_str) if arguments_str else {}
+                        args = json.loads(raw_args) if raw_args else {}
                     except json.JSONDecodeError:
-                        arguments = {}
+                        args = {}
 
-                    await self._debug(f"Executing tool: {name}({arguments})")
+                    await self._log(f"Running {name} with {args}")
 
-                    result = await self._execute_tool(name, arguments)
+                    result = await self._run_tool(name, args)
 
-                    # Add tool result to conversation
-                    messages.append(
+                    history.append(
                         {
                             "role": "tool",
-                            "tool_call_id": tool_call.get("id", ""),
+                            "tool_call_id": call.get("id", ""),
                             "content": json.dumps(result)
                             if not isinstance(result, str)
                             else result,
                         }
                     )
 
-                await self._debug(
-                    f"Feeding {len(tool_calls)} tool result(s) back to LLM"
-                )
+                await self._log("Returning tool outputs to LLM")
 
             except LLMError as e:
-                await self._debug(f"LLM error: {e}")
+                await self._log(f"LLM error: {e}")
                 return f"LLM error: {e}"
             except Exception as e:
-                await self._debug(f"Unexpected error: {e}")
-                return f"Error processing request: {e}"
+                await self._log(f"Unexpected failure: {e}")
+                return f"Error: {e}"
 
-        # Max iterations reached
-        return "I'm having trouble processing this request. Please try rephrasing your question."
-
-
-# Global router instance
-_router: IntentRouter | None = None
+        return "Request processing failed. Try rephrasing."
 
 
-def get_router() -> IntentRouter:
-    """Get or create the global intent router instance."""
-    global _router
-    if _router is None:
-        _router = IntentRouter()
-    return _router
+# Singleton pattern
+_instance: Router | None = None
+
+
+def get_router() -> Router:
+    global _instance
+    if _instance is None:
+        _instance = Router()
+    return _instance
