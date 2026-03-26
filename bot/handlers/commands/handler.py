@@ -1,175 +1,143 @@
-"""Command handlers for the LMS Telegram bot.
-
-Handlers are pure functions that take a message and return a response.
-They don't depend on Telegram — this allows testing via --test mode.
-"""
+"""Command handling logic for LMS Telegram bot."""
 
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import services
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Ensure parent directory is in sys.path for service imports
+BASE_DIR = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
 
 from services.lms_api import get_api_client, APIError
 from services.intent_router import get_router
-from keyboards import get_start_keyboard
-
-# Get the API client and router instances
-api_client = get_api_client()
-intent_router = get_router()
+from keyboards import get_start_keyboard, get_quick_actions_keyboard
 
 
-# Store keyboard for access by Telegram layer
-_last_keyboard = None
+# Initialize shared services
+_api = get_api_client()
+_router = get_router()
+
+# Store last keyboard state
+_current_keyboard: dict | None = None
 
 
 def get_last_keyboard() -> dict | None:
-    """Get the last keyboard that was set."""
-    return _last_keyboard
+    """Return the last keyboard used."""
+    return _current_keyboard
 
 
-def _set_keyboard(keyboard: dict | None) -> None:
-    """Set the keyboard for the next response."""
-    global _last_keyboard
-    _last_keyboard = keyboard
+def _update_keyboard(kb: dict | None) -> None:
+    """Update keyboard state."""
+    global _current_keyboard
+    _current_keyboard = kb
 
 
 async def handle_message(message: str) -> str:
-    """Route a message to the appropriate handler and return a response.
+    """Main message dispatcher."""
+    text = message.strip()
 
-    Args:
-        message: The incoming message text (e.g., '/start', '/help', 'what labs are available')
+    commands_map = {
+        "/start": handle_start,
+        "/help": handle_help,
+        "/health": handle_health,
+        "/labs": handle_labs,
+    }
 
-    Returns:
-        A text response to send back to the user.
-    """
-    message = message.strip()
+    if text in commands_map:
+        return await commands_map[text]()
 
-    if message == "/start":
-        return await handle_start()
-    elif message == "/help":
-        return await handle_help()
-    elif message == "/health":
-        return await handle_health()
-    elif message == "/labs":
-        return await handle_labs()
-    elif message.startswith("/scores"):
-        # Extract lab argument: /scores lab-04 -> lab-04
-        parts = message.split(maxsplit=1)
-        lab = parts[1] if len(parts) > 1 else ""
-        return await handle_scores(lab)
-    else:
-        # Use LLM intent router for natural language queries
-        return await handle_natural_language(message)
+    if text.startswith("/scores"):
+        _, *rest = text.split(maxsplit=1)
+        lab_id = rest[0] if rest else ""
+        return await handle_scores(lab_id)
+
+    return await handle_natural_language(text)
 
 
 async def handle_start() -> str:
-    """Handle /start command."""
-    _set_keyboard(get_start_keyboard())
+    """Start command handler."""
+    _update_keyboard(get_start_keyboard())
     return (
         "Welcome to the LMS Bot! 🎓\n\n"
         "I can help you explore lab data, scores, and analytics.\n\n"
-        "Try asking me questions like:\n"
+        "Try asking me:\n"
         "• What labs are available?\n"
-        "• Show me scores for lab 4\n"
+        "• Show scores for lab 4\n"
         "• Which lab has the lowest pass rate?\n"
         "• Who are the top students?\n\n"
-        "Or use commands: /help, /health, /labs, /scores <lab>"
+        "Commands: /help, /health, /labs, /scores <lab>"
     )
 
 
 async def handle_help() -> str:
-    """Handle /help command."""
-    _set_keyboard(get_start_keyboard())
+    """Help command handler."""
+    _update_keyboard(get_start_keyboard())
     return (
-        "Available commands:\n"
-        "  /start - Welcome message\n"
-        "  /help - Show this help\n"
-        "  /health - Check backend status\n"
-        "  /labs - List available labs\n"
-        "  /scores <lab> - View pass rates for a lab\n\n"
-        "Or just ask me a question in plain English!"
+        "Commands:\n"
+        "/start - Welcome\n"
+        "/help - This help\n"
+        "/health - Backend status\n"
+        "/labs - List labs\n"
+        "/scores <lab> - Lab stats\n\n"
+        "You can also ask questions in plain English."
     )
 
 
 async def handle_health() -> str:
-    """Handle /health command."""
+    """Health check handler."""
     try:
-        items = await api_client.get_items()
+        items = await _api.get_items()
         return f"Backend is healthy. {len(items)} items available."
-    except APIError as e:
-        return f"Backend error: {e.message}"
+    except APIError as err:
+        return f"Backend error: {err.message}"
 
 
 async def handle_labs() -> str:
-    """Handle /labs command."""
+    """Labs listing handler."""
     try:
-        items = await api_client.get_items()
-        # Filter for labs (type == "lab")
-        labs = [item for item in items if item.type == "lab"]
+        items = await _api.get_items()
+        labs = [x for x in items if x.type == "lab"]
+
         if not labs:
             return "No labs available."
 
-        # Format lab list
-        lab_lines = [f"- {lab.title}" for lab in labs]
-        return "Available labs:\n" + "\n".join(lab_lines)
-    except APIError as e:
-        return f"Backend error: {e.message}"
+        return "Available labs:\n" + "\n".join(f"- {lab.title}" for lab in labs)
+
+    except APIError as err:
+        return f"Backend error: {err.message}"
 
 
 async def handle_scores(lab: str) -> str:
-    """Handle /scores command.
-
-    Args:
-        lab: The lab identifier (e.g., 'lab-04').
-
-    Returns:
-        Formatted pass rates for the lab.
-    """
+    """Scores handler for a specific lab."""
     if not lab:
         return "Usage: /scores <lab> (e.g., /scores lab-04)"
 
     try:
-        pass_rates = await api_client.get_pass_rates(lab)
-        if not pass_rates:
+        stats = await _api.get_pass_rates(lab)
+
+        if not stats:
             return f"No pass rate data available for {lab}."
 
-        # Format pass rates
-        lines = [f"Pass rates for {lab}:"]
-        for record in pass_rates:
-            lines.append(
-                f"- {record.task}: {record.pass_rate:.1f}% ({record.attempts} attempts)"
-            )
-        return "\n".join(lines)
-    except APIError as e:
-        return f"Backend error: {e.message}"
+        result = [f"Pass rates for {lab}:"]
+        result.extend(
+            f"- {r.task}: {r.pass_rate:.1f}% ({r.attempts} attempts)"
+            for r in stats
+        )
+
+        return "\n".join(result)
+
+    except APIError as err:
+        return f"Backend error: {err.message}"
 
 
 async def handle_natural_language(message: str) -> str:
-    """Handle natural language queries using LLM intent routing.
-
-    This function uses the LLM to decide which tool to call based on the
-    user's message. There is NO regex or keyword matching here — the LLM
-    receives the message and tool descriptions, then decides which tool(s)
-    to call.
-
-    Args:
-        message: The user's natural language query.
-
-    Returns:
-        A text response generated by the LLM.
-    """
-    from keyboards import get_quick_actions_keyboard
-
-    _set_keyboard(get_quick_actions_keyboard())
+    """Handle free-form queries via LLM router."""
+    _update_keyboard(get_quick_actions_keyboard())
 
     try:
-        response = await intent_router.route(message)
-        return response
-    except Exception as e:
-        # Fallback: provide a helpful message
+        return await _router.route(message)
+    except Exception as err:
         return (
-            f"I had trouble processing that request. "
-            f"Try asking about labs, scores, or pass rates.\n\n"
-            f"Technical details: {e}"
+            "I couldn’t process that request.\n"
+            "Try asking about labs, scores, or pass rates.\n\n"
+            f"Details: {err}"
         )
