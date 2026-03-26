@@ -32,24 +32,9 @@ Create an API client service with Bearer token authentication. Handle errors gra
 
 ### Task 3: Intent Routing with LLM
 
-Add natural language understanding. Instead of requiring exact commands like `/labs`, users can ask "what labs are available?" The bot uses an LLM to route intents to handlers via tool descriptions. Key insight: **description quality matters more than prompt engineering** — clear tool descriptions enable the LLM to make correct routing decisions.
+Enable natural language interaction.  
+Users should be able to ask questions like *"what labs are available?"* instead of using strict commands.
 
-### Task 4: Deployment
-
-Deploy the bot on the VM with proper process management (nohup or systemd). Ensure the bot survives SSH disconnects and restarts. Configure environment variables securely via `.env.bot.secret`.
-
-## Testing Strategy
-
-- **Test mode**: `--test` flag for quick iteration without Telegram
-- **Unit tests**: Test handlers in isolation (future)
-- **Manual testing**: Deploy to VM and test in real Telegram
-
-## Environment Variables
-
-| Variable | Description | Source |
-|----------|-------------|--------|
-| `BOT_TOKEN` | Telegram bot token | BotFather |
-| `LMS_API_BASE_URL` | Backend API URL | Docker config |
-| `LMS_API_KEY` | Backend API key | `.env.docker.secret` |
-| `LLM_API_KEY` | LLM API key | Qwen Code / OpenRouter |
+The LLM is used to map user input to the appropriate handler via tool descriptions.  
+Key idea: **well-written tool descriptions are more important than complex prompt engineering**.
 | `LLM_API_BASE_URL` | LLM API endpoint | Qwen Code / OpenRouter |
