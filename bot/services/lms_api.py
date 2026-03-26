@@ -1,11 +1,13 @@
-"""LMS API client for communicating with the backend."""
+"""Async client for interacting with LMS backend API."""
 
 import httpx
 from pydantic import BaseModel
 
 
-class ItemRecord(BaseModel):
-    """Represents a lab or task item from the backend."""
+# -------------------- Models --------------------
+
+class Item(BaseModel):
+    """Entity representing a lab or task."""
 
     id: int
     type: str
@@ -14,8 +16,8 @@ class ItemRecord(BaseModel):
     parent_id: int | None = None
 
 
-class PassRateRecord(BaseModel):
-    """Represents pass rate data for a task."""
+class PassRate(BaseModel):
+    """Statistics for task pass rate."""
 
     task: str
     avg_score: float
@@ -23,124 +25,116 @@ class PassRateRecord(BaseModel):
 
     @property
     def pass_rate(self) -> float:
-        """Return avg_score as pass_rate for compatibility."""
         return self.avg_score
 
 
-class APIError(Exception):
-    """Raised when the API returns an error."""
+# -------------------- Errors --------------------
 
-    def __init__(self, message: str, status_code: int | None = None):
+class LMSAPIError(Exception):
+    """Generic API exception."""
+
+    def __init__(self, message: str, code: int | None = None):
+        super().__init__(message)
         self.message = message
-        self.status_code = status_code
-        super().__init__(self.message)
+        self.code = code
 
 
-class LMSAPIClient:
-    """Client for the LMS Backend API."""
+# -------------------- Client --------------------
 
-    def __init__(self, base_url: str, api_key: str):
-        self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
-        self._client: httpx.AsyncClient | None = None
+class LMSClient:
+    """HTTP client for LMS backend."""
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create an HTTP client with auth headers."""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
+    def __init__(self, base_url: str, token: str):
+        self._base = base_url.rstrip("/")
+        self._token = token
+        self._session: httpx.AsyncClient | None = None
+
+    async def _session_instance(self) -> httpx.AsyncClient:
+        """Create or reuse HTTP session."""
+        if self._session is None or self._session.is_closed:
+            self._session = httpx.AsyncClient(
                 timeout=30.0,
-                headers={"Authorization": f"Bearer {self.api_key}"},
+                headers={"Authorization": f"Bearer {self._token}"},
             )
-        return self._client
+        return self._session
 
-    async def close(self) -> None:
-        """Close the HTTP client."""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+    async def shutdown(self) -> None:
+        """Close session if active."""
+        if self._session and not self._session.is_closed:
+            await self._session.aclose()
 
-    async def get_items(self) -> list[ItemRecord]:
-        """Fetch all items (labs and tasks) from the backend.
+    # -------------------- API methods --------------------
 
-        Returns:
-            List of ItemRecord objects.
+    async def fetch_items(self) -> list[Item]:
+        """Retrieve all items."""
+        client = await self._session_instance()
 
-        Raises:
-            APIError: If the API returns an error.
-            httpx.ConnectError: If the backend is unreachable.
-        """
-        client = await self._get_client()
         try:
-            response = await client.get(f"{self.base_url}/items/")
-            response.raise_for_status()
-            data = response.json()
-            return [ItemRecord.model_validate(item) for item in data]
+            resp = await client.get(f"{self._base}/items/")
+            resp.raise_for_status()
+            payload = resp.json()
+            return [Item.model_validate(x) for x in payload]
+
         except httpx.ConnectError as e:
-            raise APIError(
-                f"connection refused ({self.base_url})", status_code=None
-            ) from e
+            raise LMSAPIError(f"connection refused ({self._base})") from e
+
         except httpx.HTTPStatusError as e:
-            raise APIError(
-                f"HTTP {e.response.status_code} {e.response.reason_phrase}. "
-                f"The backend service may be down.",
-                status_code=e.response.status_code,
+            raise LMSAPIError(
+                f"HTTP {e.response.status_code} {e.response.reason_phrase}. Backend might be down.",
+                code=e.response.status_code,
             ) from e
+
         except httpx.HTTPError as e:
-            raise APIError(f"request failed: {e}") from e
+            raise LMSAPIError(f"request failed: {e}") from e
 
-    async def get_pass_rates(self, lab: str) -> list[PassRateRecord]:
-        """Fetch pass rates for a specific lab.
+    async def fetch_pass_rates(self, lab: str) -> list[PassRate]:
+        """Retrieve pass rate analytics for a lab."""
+        client = await self._session_instance()
 
-        Args:
-            lab: The lab identifier (e.g., 'lab-04').
-
-        Returns:
-            List of PassRateRecord objects.
-
-        Raises:
-            APIError: If the API returns an error.
-            httpx.ConnectError: If the backend is unreachable.
-        """
-        client = await self._get_client()
         try:
-            response = await client.get(
-                f"{self.base_url}/analytics/pass-rates",
+            resp = await client.get(
+                f"{self._base}/analytics/pass-rates",
                 params={"lab": lab},
             )
-            response.raise_for_status()
-            data = response.json()
-            return [PassRateRecord.model_validate(record) for record in data]
+            resp.raise_for_status()
+            payload = resp.json()
+            return [PassRate.model_validate(x) for x in payload]
+
         except httpx.ConnectError as e:
-            raise APIError(
-                f"connection refused ({self.base_url})", status_code=None
-            ) from e
+            raise LMSAPIError(f"connection refused ({self._base})") from e
+
         except httpx.HTTPStatusError as e:
-            raise APIError(
-                f"HTTP {e.response.status_code} {e.response.reason_phrase}. "
-                f"The backend service may be down.",
-                status_code=e.response.status_code,
+            raise LMSAPIError(
+                f"HTTP {e.response.status_code} {e.response.reason_phrase}. Backend might be down.",
+                code=e.response.status_code,
             ) from e
+
         except httpx.HTTPError as e:
-            raise APIError(f"request failed: {e}") from e
+            raise LMSAPIError(f"request failed: {e}") from e
 
 
-def _get_settings():
-    """Lazy import of settings to avoid circular imports."""
+# -------------------- Settings loader --------------------
+
+def _load_settings():
+    """Import settings lazily."""
     from config import settings
-
     return settings
 
 
-# Global API client instance - initialized lazily
-_api_client: LMSAPIClient | None = None
+# -------------------- Singleton --------------------
+
+_client: LMSClient | None = None
 
 
-def get_api_client() -> LMSAPIClient:
-    """Get or create the global API client instance."""
-    global _api_client
-    if _api_client is None:
-        settings = _get_settings()
-        _api_client = LMSAPIClient(
-            base_url=settings.LMS_API_BASE_URL or "http://localhost:42002",
-            api_key=settings.LMS_API_KEY or "",
+def get_api_client() -> LMSClient:
+    """Return shared LMS client instance."""
+    global _client
+
+    if _client is None:
+        cfg = _load_settings()
+        _client = LMSClient(
+            base_url=cfg.LMS_API_BASE_URL or "http://localhost:42002",
+            token=cfg.LMS_API_KEY or "",
         )
-    return _api_client
+
+    return _client
